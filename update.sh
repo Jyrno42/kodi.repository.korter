@@ -1,1 +1,1 @@
-python ./create_repository.py --compressed $(cat plugins.list)
+python ./create_repository.py --compressed --verbose kodi.repository.korter

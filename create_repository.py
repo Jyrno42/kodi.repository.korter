@@ -148,7 +148,7 @@ def copy_metadata_files(source_folder, addon_target_folder, addon_metadata):
                 os.path.join(addon_target_folder, target_basename))
 
 
-def fetch_addon_from_git(addon_location, target_folder):
+def fetch_addon_from_git(addon_location, target_folder, verbose):
     # Parse the format "REPOSITORY_URL#BRANCH:PATH". The colon is a delimiter
     # unless it looks more like a scheme, (e.g., "http://").
     match = re.match(
@@ -191,17 +191,24 @@ def fetch_addon_from_git(addon_location, target_folder):
         shutil.rmtree(clone_folder, ignore_errors=False)
 
 
-def fetch_addon_from_folder(raw_addon_location, target_folder):
+def fetch_addon_from_folder(raw_addon_location, target_folder, verbose):
     addon_location = os.path.expanduser(raw_addon_location)
     metadata_path = os.path.join(addon_location, INFO_BASENAME)
     addon_metadata = parse_metadata(metadata_path)
     addon_target_folder = os.path.join(target_folder, addon_metadata.id)
+
+    if verbose:
+        print('[folder]', addon_location, addon_target_folder)
 
     # Create the compressed add-on archive.
     if not os.path.isdir(addon_target_folder):
         os.mkdir(addon_target_folder)
     archive_path = os.path.join(
         addon_target_folder, get_archive_basename(addon_metadata))
+
+    if verbose:
+        print('[folder]', 'creating zip: {0}'.format(archive_path))
+
     with zipfile.ZipFile(
             archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for (root, dirs, files) in os.walk(addon_location):
@@ -209,10 +216,27 @@ def fetch_addon_from_folder(raw_addon_location, target_folder):
                 addon_metadata.id,
                 os.path.relpath(root, addon_location))
             for relative_path in files:
+                file_path = os.path.join(root, relative_path)
+
+                if os.path.abspath(file_path) == os.path.abspath(archive_path):
+                    if verbose:
+                        print('[folder]', 'skipped file {0}'.format(file_path))
+                    continue
+
+                if verbose:
+                    print('[folder]', 'adding file {0} to zip'.format(file_path))
+                    print('[folder]', '  in path: {0}'.format(os.path.join(relative_root, relative_path)))
+
                 archive.write(
-                    os.path.join(root, relative_path),
+                    file_path,
                     os.path.join(relative_root, relative_path))
+    if verbose:
+        print('[folder]', 'generating checksum')
+
     generate_checksum(archive_path)
+
+    if verbose:
+        print('[folder]', 'checking dupes')
 
     if not os.path.samefile(addon_location, addon_target_folder):
         copy_metadata_files(
@@ -221,7 +245,7 @@ def fetch_addon_from_folder(raw_addon_location, target_folder):
     return addon_metadata
 
 
-def fetch_addon_from_zip(raw_addon_location, target_folder):
+def fetch_addon_from_zip(raw_addon_location, target_folder, verbose):
     addon_location = os.path.expanduser(raw_addon_location)
     with zipfile.ZipFile(
             addon_location, compression=zipfile.ZIP_DEFLATED) as archive:
@@ -265,17 +289,17 @@ def fetch_addon_from_zip(raw_addon_location, target_folder):
     return addon_metadata
 
 
-def fetch_addon(addon_location, target_folder, result_slot):
+def fetch_addon(addon_location, target_folder, result_slot, verbose):
     try:
         if is_url(addon_location):
             addon_metadata = fetch_addon_from_git(
-                addon_location, target_folder)
+                addon_location, target_folder, verbose)
         elif os.path.isdir(addon_location):
             addon_metadata = fetch_addon_from_folder(
-                addon_location, target_folder)
+                addon_location, target_folder, verbose)
         elif os.path.isfile(addon_location):
             addon_metadata = fetch_addon_from_zip(
-                addon_location, target_folder)
+                addon_location, target_folder, verbose)
         else:
             raise RuntimeError('Path not found: {}'.format(addon_location))
         result_slot.append(WorkerResult(addon_metadata, None))
@@ -283,10 +307,10 @@ def fetch_addon(addon_location, target_folder, result_slot):
         result_slot.append(WorkerResult(None, sys.exc_info()))
 
 
-def get_addon_worker(addon_location, target_folder):
+def get_addon_worker(addon_location, target_folder, verbose):
     result_slot = []
     thread = threading.Thread(target=lambda: fetch_addon(
-        addon_location, target_folder, result_slot))
+        addon_location, target_folder, result_slot, verbose))
     return AddonWorker(thread, result_slot)
 
 
@@ -295,7 +319,8 @@ def create_repository(
         target_folder,
         info_path,
         checksum_path,
-        is_compressed):
+        is_compressed,
+        verbose):
     # Import git lazily.
     if any(is_url(addon_location) for addon_location in addon_locations):
         try:
@@ -304,6 +329,12 @@ def create_repository(
         except ImportError:
             raise RuntimeError(
                 'Please install GitPython: pip install gitpython')
+    
+    if verbose:
+        print('Creating the following addons in target folder: {0}'.format(target_folder))
+
+        for addon in addon_locations:
+            print('    - {0}'.format(addon))
 
     # Create the target folder.
     if not os.path.isdir(target_folder):
@@ -311,11 +342,19 @@ def create_repository(
 
     # Fetch all the add-on sources in parallel.
     workers = [
-        get_addon_worker(addon_location, target_folder)
+        get_addon_worker(addon_location, target_folder, verbose)
         for addon_location in addon_locations]
+
     for worker in workers:
         worker.thread.start()
-    for worker in workers:
+
+    if verbose:
+        print('Started {0} workers.'.format(len(workers)))
+
+    for i, worker in enumerate(workers):
+        if verbose:
+            print('    Worker[{0}] wait for join'.format(i))
+
         worker.thread.join()
 
     # Collect the results from all the threads.
@@ -373,7 +412,22 @@ def main():
         help='''Location of the add-on: either a path to a local folder or
                 to a zip archive or a URL for a Git repository with the
                 format REPOSITORY_URL#BRANCH:PATH''')
+    parser.add_argument(
+        '--verbose',
+        '-v',
+        action='store_true',
+        help='Enable verbose mode')
+
     args = parser.parse_args()
+
+    #read addons to include from addonslist.txt file
+    if os.path.exists("addonslist.txt"):
+        with open("addonslist.txt") as f:
+            for line in f.readlines():
+                if not line.startswith("#"):
+                    line = line.strip()
+                    if line:
+                        args.addon.append(line)
 
     data_path = os.path.expanduser(args.datadir)
     if args.info is None:
@@ -389,7 +443,7 @@ def main():
         os.path.expanduser(args.checksum) if args.checksum is not None
         else '{}.md5'.format(info_path))
     create_repository(
-        args.addon, data_path, info_path, checksum_path, args.compressed)
+        args.addon, data_path, info_path, checksum_path, args.compressed, args.verbose)
 
 
 if __name__ == "__main__":

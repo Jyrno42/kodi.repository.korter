@@ -1,0 +1,10 @@
+[default]
+name=Default
+runtime=host
+config-opts=
+run-opts=
+prefix=/home/jyrno42/.cache/gnome-builder/install/kodi.repository.korter/host
+app-id=
+postbuild=
+prebuild=
+default=true

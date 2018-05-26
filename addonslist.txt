@@ -1,4 +1,1 @@
-https://github.com/marcelveldt/script.module.cherrypy#d38ac91600de463945ab85617138e77b5f0a0c18
-
-https://github.com/Jyrno42/plugin.audio.spotify.git#f5ed1ae944ad21d6c936096fe17a256631a8a6b0
 https://github.com/Jyrno42/service.bgmusic#master

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="kodi.repository.korter" version="0.0.14" name="Korters KODI repository" provider-name="jyrno42">
+<addon id="kodi.repository.korter" version="0.0.15" name="Korters KODI repository" provider-name="jyrno42">
 	<extension point="xbmc.addon.repository" name="Korters KODI repository">
 		<info compressed="true">https://raw.githubusercontent.com/jyrno42/kodi.repository.korter/gh-pages/addons.xml.gz</info>
 		<checksum>https://raw.githubusercontent.com/jyrno42/kodi.repository.korter/gh-pages/addons.xml.gz.md5</checksum>
